@@ -131,4 +131,4 @@ equalisation is ideal, so the eye is an upper bound on what an implementation ac
 ```
 
 Roughly 25 minutes on a laptop. Every figure in every report and on the
-[site](https://anilram30.github.io) is regenerated.
+[site](https://anilram30.github.io/hf-cable/) is regenerated.
