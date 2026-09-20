@@ -1,0 +1,70 @@
+name: Integration
+
+# Installs all seven packages from their own repositories in dependency order and
+# smoke-tests each one, so a breaking change in the foundation is caught here even
+# when every individual repository is still green.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"        # Monday morning, to catch upstream dependency drift
+  workflow_dispatch:
+
+jobs:
+  full-stack:
+    name: install and run the whole toolchain
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install all seven packages
+        run: ./scripts/install-all.sh
+
+      - name: Every command line answers
+        run: |
+          for p in cablecheck zprofile shieldeval cableanalytics labauto labplatform linktwin; do
+            echo "--- $p"
+            "$p" --help > /dev/null
+            python -c "import $p; print('$p', $p.__version__)"
+          done
+
+      - name: Run the demonstrations
+        run: ./scripts/run-all-demos.sh out --quick
+
+      - name: Check the expected output exists
+        run: |
+          set -e
+          test -f out/g-linktwin/index.html
+          test -f out/g-linktwin/demo_record.json
+          test -d out/f-labplatform
+          python - <<'PY'
+          import json, sys
+          rec = json.load(open("out/g-linktwin/demo_record.json"))
+          v = rec["validation"]["scaling_physical"]
+          worst = max(r["il_max_err_db"] for r in v["rows"])
+          print(f"worst insertion-loss prediction error: {worst:.3f} dB")
+          if worst > 0.15:
+              sys.exit(f"regression: expected under 0.15 dB, got {worst:.3f}")
+          cas = rec["validation"]["cascade"]
+          assert cas["same_verdict"], "twin and truth harness disagree"
+          print("cascade verdict agrees; headline diff %.4f dB" % cas["headline_diff_db"])
+          PY
+
+      - name: Upload the demonstration output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: toolchain-demo-py${{ matrix.python-version }}
+          path: out/
+          retention-days: 14
